@@ -104,6 +104,15 @@ target_link_libraries(room_segmentation_server
 	${OpenCV_LIBRARIES})
 
 ### client for testing purpose
+add_executable(room_segmentation_mapping_client ros/src/room_segmentation_mapping_client.cpp)
+target_link_libraries(room_segmentation_mapping_client
+	${catkin_LIBRARIES} 
+	${OpenCV_LIBRARIES})
+add_dependencies(room_segmentation_mapping_client
+	${catkin_EXPORTED_TARGETS}
+	${${PROJECT_NAME}_EXPORTED_TARGETS}
+)
+
 add_executable(room_segmentation_client ros/src/room_segmentation_client.cpp)
 target_link_libraries(room_segmentation_client
 	${catkin_LIBRARIES} 
