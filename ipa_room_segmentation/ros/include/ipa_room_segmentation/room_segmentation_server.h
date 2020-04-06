@@ -91,6 +91,11 @@ class RoomSegmentationServer
 protected:
 
 	// parameters
+	std::string frame_id;
+	bool merge_neighbor_rooms;
+	bool random_colors;
+	bool erode;
+	int max_color_value;
 	//limits for the room-areas
 	double room_upper_limit_morphological_, room_upper_limit_distance_, room_upper_limit_voronoi_, room_upper_limit_semantic_, room_upper_limit_voronoi_random_, room_upper_limit_passthrough_;
 	double room_lower_limit_morphological_, room_lower_limit_distance_, room_lower_limit_voronoi_, room_lower_limit_semantic_, room_lower_limit_voronoi_random_, room_lower_limit_passthrough_;

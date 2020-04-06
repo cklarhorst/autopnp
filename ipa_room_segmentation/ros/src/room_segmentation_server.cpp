@@ -71,6 +71,11 @@ RoomSegmentationServer::RoomSegmentationServer(ros::NodeHandle nh, std::string n
 	node_handle_(nh),
 	room_segmentation_server_(node_handle_, name_of_the_action, boost::bind(&RoomSegmentationServer::execute_segmentation_server, this, _1), false)
 {
+	frame_id = "room_segmentation/room_segmentation_server/segmented_map"; // old version used "map"
+	merge_neighbor_rooms = false; // old version: true
+	random_colors = false; // old version: true
+	max_color_value = 200;
+	erode = true; // old version: false
 	// parameters to check if the algorithms need to be trained (not part of dynamic reconfigure)
 	node_handle_.param("train_semantic", train_semantic_, false);
 	std::cout << "room_segmentation/train_semantic_ = " << train_semantic_ << std::endl;
@@ -460,7 +465,7 @@ void RoomSegmentationServer::execute_segmentation_server(const ipa_building_msgs
 	{
 		VoronoiSegmentation voronoi_segmentation; //voronoi segmentation method
 		voronoi_segmentation.segmentMap(original_img, segmented_map, map_resolution, room_lower_limit_voronoi_, room_upper_limit_voronoi_,
-			voronoi_neighborhood_index_, max_iterations_, min_critical_point_distance_factor_, max_area_for_merging_, (display_segmented_map_&&DEBUG_DISPLAYS));
+			voronoi_neighborhood_index_, max_iterations_, min_critical_point_distance_factor_, max_area_for_merging_, merge_neighbor_rooms, erode, (display_segmented_map_&&DEBUG_DISPLAYS));
 	}
 	else if (room_segmentation_algorithm_ == 4)
 	{
@@ -740,7 +745,7 @@ void RoomSegmentationServer::execute_segmentation_server(const ipa_building_msgs
 		// "colorize" the segmented map with gray scale values
 		nav_msgs::OccupancyGrid segmented_grid;
 		segmented_grid.header.stamp = ros::Time::now();
-		segmented_grid.header.frame_id = "map";
+		segmented_grid.header.frame_id = frame_id;
 		segmented_grid.info.resolution = map_resolution;
 		segmented_grid.info.width = indexed_map.cols;
 		segmented_grid.info.height = indexed_map.rows;
@@ -751,7 +756,12 @@ void RoomSegmentationServer::execute_segmentation_server(const ipa_building_msgs
 		//choose random color for each room
 		colors[0] = 0;
 		for(int i = 1; i <= room_centers_x_values.size(); ++i)
-			colors[i] = 20 + rand() % 81;
+		{
+			if (random_colors)
+				colors[i] = 20 + rand() % 81;
+			else
+				colors[i] = (int)(max_color_value*1.0/room_centers_x_values.size()*i);
+		}
 		int i=0;
 		for(int v = 0; v < indexed_map.rows; ++v)
 			for(int u = 0; u < indexed_map.cols; ++u, ++i)
