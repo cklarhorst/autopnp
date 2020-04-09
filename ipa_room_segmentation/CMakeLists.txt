@@ -104,7 +104,10 @@ target_link_libraries(room_segmentation_server
 	${OpenCV_LIBRARIES})
 
 ### client for testing purpose
-add_executable(room_segmentation_mapping_client ros/src/room_segmentation_mapping_client.cpp)
+add_executable(room_segmentation_mapping_client 
+	ros/src/room_segmentation_mapping_client.cpp
+	ros/src/A_star_pathplanner.cpp
+	ros/src/node.cpp)
 target_link_libraries(room_segmentation_mapping_client
 	${catkin_LIBRARIES} 
 	${OpenCV_LIBRARIES})

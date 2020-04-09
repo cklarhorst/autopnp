@@ -11,6 +11,7 @@
 #include <ipa_building_msgs/MapSegmentationAction.h>
 #include <ipa_room_segmentation/dynamic_reconfigure_client.h>
 #include <nav_msgs/OccupancyGrid.h>
+#include <ipa_room_segmentation/A_star_pathplanner.h>
 
 /* Used by the mapCallback */
 actionlib::SimpleActionClient<ipa_building_msgs::MapSegmentationAction>* ac;
@@ -81,14 +82,59 @@ void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
 	if (finished_before_timeout)
 	{
 		ROS_INFO("Finished successfully!");
+		ipa_building_msgs::MapSegmentationResultConstPtr result_seg = ac->getResult();
+		AStarPlanner a_star_path_planner;
+		cv_bridge::CvImagePtr cv_ptr_obj;
+		cv_ptr_obj = cv_bridge::toCvCopy(result_seg->segmented_map, sensor_msgs::image_encodings::TYPE_32SC1);
+		double min, max;
+		cv::minMaxLoc(cv_ptr_obj->image,&min,&max);
+		ROS_INFO_STREAM("Min" << min << "max "<<max);
+		cv::Mat segmented_map = cv_ptr_obj->image;
+		cv::Mat colour_segmented_map = segmented_map.clone();
+		colour_segmented_map.convertTo(colour_segmented_map, CV_8U);
+		cv::normalize(colour_segmented_map,colour_segmented_map,255,0,cv::NORM_MINMAX);
+		cv::minMaxLoc(colour_segmented_map,&min,&max);
+		ROS_INFO_STREAM("Min" << min << "max "<<max);
+		cv::cvtColor(colour_segmented_map, colour_segmented_map, CV_GRAY2BGR);
+		cv::imshow("test", cv_image.image);
+		cv::waitKey();
+		//draw the room centers into the map
+		cv::Mat downsampled_map;
+		a_star_path_planner.downsampleMap(cv_image.image, downsampled_map, 1.0, 1.0, 1.0);
+		for(size_t src = 0; src < result_seg->room_information_in_pixel.size(); ++src)
+		{
+			int src_x = result_seg->room_information_in_pixel[src].room_center.x;
+			int src_y = result_seg->room_information_in_pixel[src].room_center.y;
+			for(size_t dst = 0; dst < result_seg->room_information_in_pixel.size(); ++dst)
+			{
+				if (src==dst)
+					continue;
+				
+				int dst_x = result_seg->room_information_in_pixel[dst].room_center.x;
+				int dst_y = result_seg->room_information_in_pixel[dst].room_center.y;
+				//std::vector<cv::Point> t;
+				ROS_INFO("1");
+				a_star_path_planner.m = downsampled_map.rows;// horizontal size of the map
+				a_star_path_planner.n = downsampled_map.cols;// vertical size size of the map
+				std::string path = a_star_path_planner.pathFind(src_x, src_y, dst_x, dst_y, downsampled_map);
+				ROS_INFO("2");
+				a_star_path_planner.drawRoute(colour_segmented_map,cv::Point(src_x,src_y),path,1.0);
+				//a_star_path_planner.planPath(cv_image_tmp, cv::Point(src_x,src_y), cv::Point(dst_x,dst_y),1, 1, 1,1, &t);
+			}
+			cv::circle(colour_segmented_map, cv::Point(src_x,src_y), 2, CV_RGB(255,0,0));
+		}
+		ROS_INFO("3");
+		cv::imshow("test2", colour_segmented_map);
+		cv::waitKey();
 	}
 	
-	
+
  }
 
 int main(int argc, char **argv)
 {
-	const char* map_publish_topic = "/map_merge/map";
+	//const char* map_publish_topic = "/map_merge/map";
+	const char* map_publish_topic = "/map";
 	
 	ros::init(argc, argv, "room_segmentation_client");
 	ros::NodeHandle nh;

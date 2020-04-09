@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <launch>
 
-  <!.. <node name="map_server" pkg="map_server" type="map_server" args="PATH_TO_MAP" /> -->
+  <!-- <node name="map_server" pkg="map_server" type="map_server" args="PATH_TO_MAP" /> -->
 
   <!--  -->
   <node ns="room_segmentation" pkg="ipa_room_segmentation" type="room_segmentation_mapping_client" name="room_segmentation_mapping_client" output="screen"/>
