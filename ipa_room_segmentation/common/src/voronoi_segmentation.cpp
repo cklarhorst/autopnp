@@ -51,7 +51,7 @@ void VoronoiSegmentation::segmentMap(const cv::Mat& map_to_be_labeled, cv::Mat& 
 	//			3. Spread the colour-regions to the last white Pixels, using the watershed-region-spreading function.
 
 	//*********************I. Calculate and draw the Voronoi-Diagram in the given map*****************
-
+	merge_neighbor_rooms=1;
 	cv::Mat voronoi_map = map_to_be_labeled.clone();
 	createVoronoiGraph(voronoi_map); //voronoi-map for the segmentation-algorithm
 
@@ -140,12 +140,12 @@ void VoronoiSegmentation::segmentMap(const cv::Mat& map_to_be_labeled, cv::Mat& 
 			}
 		}
 	}
-
 //	if(display_map == true)
 //	{
-//		cv::Mat display = map_to_be_labeled.clone();
-//		for (size_t i=0; i<critical_points.size(); ++i)
-//			cv::circle(display, critical_points[i], 2, cv::Scalar(128), -1);
+		cv::Mat display = map_to_be_labeled.clone();
+		for (size_t i=0; i<critical_points.size(); ++i)
+			cv::circle(display, critical_points[i], 2, cv::Scalar(128), -1);
+		cv::imwrite("vo_test1.png",display);
 //		cv::imshow("critical points", display);
 //	}
 
@@ -291,8 +291,9 @@ void VoronoiSegmentation::segmentMap(const cv::Mat& map_to_be_labeled, cv::Mat& 
 	std::vector<Room> rooms; //Vector to save the rooms in this map
 
 	//1. Erode map one time, so small gaps are closed
-	if (erode)
-		cv::erode(voronoi_map, voronoi_map, cv::Mat(), cv::Point(-1, -1), 1);
+//	if (erode)
+//		cv::erode(voronoi_map, voronoi_map, cv::Mat(), cv::Point(-1, -1), 1);
+	cv::imwrite("voronoi_map_eroded.png", voronoi_map);
 	cv::findContours(voronoi_map, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE);
 
 	for (int current_contour = 0; current_contour < contours.size(); current_contour++)
@@ -329,10 +330,10 @@ void VoronoiSegmentation::segmentMap(const cv::Mat& map_to_be_labeled, cv::Mat& 
 		}
 	}
 	std::cout << "Found " << rooms.size() << " rooms.\n";
-
+	cv::imwrite("vor_before_wavefront.png", segmented_map);
 	//3.fill the last white areas with the surrounding color
 	wavefrontRegionGrowing(segmented_map);
-
+	cv::imwrite("vor_after_wavefront.png", segmented_map);
 	if(display_map == true)
 	{
 		cv::imshow("before", segmented_map);
@@ -340,6 +341,6 @@ void VoronoiSegmentation::segmentMap(const cv::Mat& map_to_be_labeled, cv::Mat& 
 	}
 
 	//4.merge the rooms together if neccessary
-	if (merge_neighbor_rooms)
-		mergeRooms(segmented_map, rooms, map_resolution_from_subscription, max_area_for_merging, display_map);
+//	if (merge_neighbor_rooms)
+		//mergeRooms(segmented_map, rooms, map_resolution_from_subscription, max_area_for_merging, display_map);
 }
