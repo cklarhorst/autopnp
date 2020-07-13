@@ -341,6 +341,6 @@ void VoronoiSegmentation::segmentMap(const cv::Mat& map_to_be_labeled, cv::Mat& 
 	}
 
 	//4.merge the rooms together if neccessary
-//	if (merge_neighbor_rooms)
-		//mergeRooms(segmented_map, rooms, map_resolution_from_subscription, max_area_for_merging, display_map);
+	if (merge_neighbor_rooms)
+		mergeRooms(segmented_map, rooms, map_resolution_from_subscription, max_area_for_merging, display_map);
 }

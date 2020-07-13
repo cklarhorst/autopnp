@@ -258,10 +258,12 @@ int main(int argc, char **argv)
 	ros::NodeHandle nh;
 	
 	std::string map_publish_topic;
-	nh.param<std::string>("map_publish_topic", map_publish_topic, "/map");
-	nh.param("write_debug_images", writeDebugImages, true);
-	nh.param("enable_a_star", enableAStar, true);
-	nh.param("print_task_table", printTaskTable, true);
+	nh.param<std::string>("/room_segmentation_client/map_publish_topic", map_publish_topic, "/map");
+	ROS_INFO("start");
+	nh.param("/room_segmentation_client/write_debug_images", writeDebugImages, true);
+	nh.param("/room_segmentation_client/enable_a_star", enableAStar, true);
+	nh.param("/room_segmentation_client/print_task_table", printTaskTable, true);
+	ROS_INFO_STREAM("test" << writeDebugImages);
 
 	ROS_INFO("Waiting for room segmentation server to start.");
 	actionlib::SimpleActionClient<ipa_building_msgs::MapSegmentationAction> segmentation_server("room_segmentation_server", true);
