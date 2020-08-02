@@ -182,6 +182,7 @@ void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
 		cv::Mat cleaned_map;
 		cv::Mat downsampled_map;
 		cv::dilate(cv_image.image, cleaned_map, cv::Mat(), cv::Point(-1, -1), 2);
+		int unknown=0;
 		if (enableAStar) 
 		{
 			size_t nb_rooms = result_seg->room_information_in_pixel.size()+1;
@@ -192,12 +193,13 @@ void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
 				{
 					unsigned int id = segmented_map.at<int>(u,v);
 					if (id>result_seg->room_information_in_pixel.size())
-						ROS_ERROR_STREAM("Room size calculator: Out of range: " << id << std::endl);
+						++unknown;
+						//ROS_ERROR_STREAM("Room size calculator: Out of range: " << id << std::endl);
 					else
 						++room_sizes[id];
 				}
 			}
-
+			ROS_INFO_STREAM("#"<<unknown<<" px belong to no rooms?!?");
 			/* Which center should we use?
 			for (size_t src = 0; src < result_seg->room_information_in_pixel.size(); ++src) { // not nb_rooms
 				std::ostringstream str;
