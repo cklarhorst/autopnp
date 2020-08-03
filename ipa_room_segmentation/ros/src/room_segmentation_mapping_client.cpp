@@ -227,8 +227,9 @@ void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
 					{
 						if (printTaskTable)
 						{
-							double dist = room_sizes[src+1]*0.05*0.05;
-							std::cout << std::fixed << std::setprecision(0) << dist << ",";
+							std::cout << "#" << room_information_in_pixel.size() << " final rooms" << std::endl;
+							double rsize = room_sizes[src+1] * msg->info.resolution * msg->info.resolution;
+							std::cout << std::fixed << std::setprecision(2) << rsize << ",";
 						}
 						continue;
 					}
@@ -239,7 +240,7 @@ void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
 					std::string path = a_star_path_planner.pathFind(src_x, src_y, dst_x, dst_y, downsampled_map);
 					a_star_path_planner.drawRoute(colour_segmented_map,cv::Point(src_x,src_y),path,1.0);
 					if (printTaskTable)
-						std::cout << std::fixed << std::setprecision(1) << path.size() << ",";
+						std::cout << std::fixed << std::setprecision(2) << (path.size() *  msg->info.resolution) << ",";
 				}
 				cv::circle(colour_segmented_map, cv::Point(src_x,src_y), 2, CV_RGB(255,0,0));
 				if (printTaskTable)
