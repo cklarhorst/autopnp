@@ -217,6 +217,7 @@ void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
 			a_star_path_planner.downsampleMap(cleaned_map, downsampled_map, 1.0, 3.0, 1.0);
 			if (writeDebugImages)
 				cv::imwrite("downsampled_map_for_a_star.png", downsampled_map);
+			std::cout << "#" << result_seg->room_information_in_pixel.size() << " final rooms" << std::endl;
 			for(size_t src = 0; src < result_seg->room_information_in_pixel.size(); ++src)
 			{
 				int src_x = result_seg->room_information_in_pixel[src].room_center.x;
@@ -227,7 +228,6 @@ void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
 					{
 						if (printTaskTable)
 						{
-							std::cout << "#" << room_information_in_pixel.size() << " final rooms" << std::endl;
 							double rsize = room_sizes[src+1] * msg->info.resolution * msg->info.resolution;
 							std::cout << std::fixed << std::setprecision(2) << rsize << ",";
 						}
