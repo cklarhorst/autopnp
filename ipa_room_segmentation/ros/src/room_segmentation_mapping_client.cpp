@@ -22,11 +22,10 @@ bool enableAStar      = false;
 bool printTaskTable   = false;
 using namespace cv;
 
-
 /**
  * Convert an OccupancyGrid to a CVImage based on an occupancy threshold
  */
-void convertOccupancyGrid2CvImageTrinary(const nav_msgs::OccupancyGridConstPtr& msg, cv_bridge::CvImage& wall, cv_bridge::CvImage& wall_and_unknown)
+static void convertOccupancyGrid2CvImageTrinary(const nav_msgs::OccupancyGridConstPtr& msg, cv_bridge::CvImage& wall, cv_bridge::CvImage& wall_and_unknown)
 {
 	cv::Mat img_wall(msg->info.height, msg->info.width, CV_8UC1);
 	cv::Mat img_wall_unknown(msg->info.height, msg->info.width, CV_8UC1);
@@ -70,21 +69,16 @@ void convertOccupancyGrid2CvImageTrinary(const nav_msgs::OccupancyGridConstPtr& 
 }
 
 /**
- * Called when a new map is published, starts the segmentation process
+ * Preprocess map
+ * - Multiple Erode/Dilate steps
+ * - Remove small wall noise
  */
-void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
-{ 
-	ROS_INFO("Receive new map");
-	ROS_DEBUG_STREAM("Header     : " << msg->header);
-	ROS_DEBUG_STREAM("MapMetaData: " << msg->info);
-	if (writeDebugImages)
-		ROS_INFO_STREAM("Current path is " << getcwd(NULL, 0) << "\n"); //will leak mem
-	sensor_msgs::Image map;
-
+static void preprocess_map(const nav_msgs::OccupancyGridConstPtr& msg, cv::Mat& cv_image_walls_and_unknown_cleaned_combined)
+{
 	cv_bridge::CvImage cv_image_walls;
 	cv_bridge::CvImage cv_image_walls_and_unknown;
 	convertOccupancyGrid2CvImageTrinary(msg, cv_image_walls, cv_image_walls_and_unknown);
-	// Preprocessing start
+
 	if (writeDebugImages) 
 	{
 		cv::imwrite("walls.png", cv_image_walls.image);
@@ -130,7 +124,7 @@ void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
 	{
 		circle(cv_image_tmp, k.pt,k.size, cv::Scalar(255), CV_FILLED, 0);
 	}
-	cv::Mat cv_image_walls_and_unknown_cleaned_combined;
+	
 	cv::bitwise_and(cv_image_walls_and_unknown_cleaned,cv_image_walls_and_unknown_cleaned,cv_image_walls_and_unknown_cleaned_combined,cv_image_tmp);
 
 	if (writeDebugImages) 
@@ -141,8 +135,122 @@ void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
 		cv::imwrite("walls_unkown_cleaned_combined.png", cv_image_walls_and_unknown_cleaned_combined);
 		cv::imwrite("used_for_segmentation.png", cv_image_walls_and_unknown_cleaned_combined);
 	}
+}
 
-	// Preprocessing end
+static void runAStarOnSegmentedMap(ipa_building_msgs::MapSegmentationResultConstPtr result_seg, cv_bridge::CvImage cv_image, cv::Mat& segmented_map, double map_resolution)
+{
+	AStarPlanner a_star_path_planner;
+	int unknown=0;
+	double min, max;
+	cv::Mat colour_segmented_map = segmented_map.clone();
+	colour_segmented_map.convertTo(colour_segmented_map, CV_8U);
+	cv::normalize(colour_segmented_map,colour_segmented_map,255,0,cv::NORM_MINMAX);
+	cv::minMaxLoc(colour_segmented_map,&min,&max);
+	cv::cvtColor(colour_segmented_map, colour_segmented_map, CV_GRAY2BGR);
+	colour_segmented_map = Scalar(0,0,0);
+	cv::Mat cleaned_map;
+	cv::Mat downsampled_map;
+	cv::dilate(cv_image.image, cleaned_map, cv::Mat(), cv::Point(-1, -1), 2);
+	
+	size_t nb_rooms = result_seg->room_information_in_pixel.size()+1;
+	unsigned int room_sizes[nb_rooms]={0};
+	for(size_t u = 0; u < segmented_map.rows; ++u)
+	{
+		for(size_t v = 0; v < segmented_map.cols; ++v)
+		{
+			unsigned int id = segmented_map.at<int>(u,v);
+			if (id>result_seg->room_information_in_pixel.size())
+				++unknown;
+				//ROS_ERROR_STREAM("Room size calculator: Out of range: " << id << std::endl);
+			else
+				++room_sizes[id];
+		}
+	}
+	ROS_INFO_STREAM("#"<<unknown<<" px belong to no rooms?!?");
+	/* Which center should we use?
+	for (size_t src = 0; src < result_seg->room_information_in_pixel.size(); ++src) { // not nb_rooms
+		std::ostringstream str;
+		str << "R" << src;
+		pointNames[src] = str.str();
+		cv::Mat tmp;
+		cv::Vec3b c = colour_segmented_map.at<cv::Vec3b>(result_seg->room_information_in_pixel[src].room_center.y,result_seg->room_information_in_pixel[src].room_center.x);
+		cv::inRange(colour_segmented_map,c,c, tmp );
+		cv::Moments m = moments(tmp,true);
+		centers[src].x = m.m10/m.m00;
+		centers[src].y = m.m01/m.m00;
+		std::cout << "Room: " << src << ":" << c << ":" << centers[src].x << "," << centers[src].y << std::endl;
+	}*/
+
+	a_star_path_planner.downsampleMap(cleaned_map, downsampled_map, 1.0, 3.0, 1.0);
+	if (writeDebugImages)
+		cv::imwrite("downsampled_map_for_a_star.png", downsampled_map);
+	std::cout << "#" << result_seg->room_information_in_pixel.size() << " final rooms" << std::endl;
+	for(size_t src = 0; src < result_seg->room_information_in_pixel.size(); ++src)
+	{
+		int src_x = result_seg->room_information_in_pixel[src].room_center.x;
+		int src_y = result_seg->room_information_in_pixel[src].room_center.y;
+		for(size_t dst = 0; dst < result_seg->room_information_in_pixel.size(); ++dst)
+		{
+			if (src==dst)
+			{
+				if (printTaskTable)
+				{
+					double rsize = room_sizes[src+1] * map_resolution * map_resolution;
+					std::cout << std::fixed << std::setprecision(2) << rsize << ",";
+				}
+				continue;
+			}
+			int dst_x = result_seg->room_information_in_pixel[dst].room_center.x;
+			int dst_y = result_seg->room_information_in_pixel[dst].room_center.y;
+			a_star_path_planner.m = downsampled_map.rows;// horizontal size of the map
+			a_star_path_planner.n = downsampled_map.cols;// vertical size size of the map
+			std::string path = a_star_path_planner.pathFind(src_x, src_y, dst_x, dst_y, downsampled_map);
+			a_star_path_planner.drawRoute(colour_segmented_map,cv::Point(src_x,src_y),path,1.0);
+			if (printTaskTable)
+				std::cout << std::fixed << std::setprecision(2) << (path.size() *  map_resolution) << ",";
+		}
+		cv::circle(colour_segmented_map, cv::Point(src_x,src_y), 2, CV_RGB(255,0,0));
+		if (printTaskTable)
+			std::cout << std::endl;
+	}
+	if (writeDebugImages)
+		cv::imwrite("segmentated_map_with_pathes.png",colour_segmented_map);	
+}
+
+static void processSegmentedMap(cv_bridge::CvImage cv_image, double map_resolution)
+{
+	ipa_building_msgs::MapSegmentationResultConstPtr result_seg = ac->getResult();
+	cv_bridge::CvImagePtr cv_ptr_obj;
+	cv_ptr_obj = cv_bridge::toCvCopy(result_seg->segmented_map, sensor_msgs::image_encodings::TYPE_32SC1);
+	double min, max;
+	cv::minMaxLoc(cv_ptr_obj->image,&min,&max);
+	cv::Mat segmented_map = cv_ptr_obj->image;
+	
+	if (writeDebugImages)
+		cv::imwrite("segmented_map.png",segmented_map);
+	if (enableAStar) 
+	{
+		runAStarOnSegmentedMap(result_seg, cv_image, segmented_map, map_resolution);
+	}
+}
+
+
+
+/**
+ * Called when a new map is published, starts the segmentation process
+ */
+void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
+{ 
+	ROS_INFO("Receive new map");
+	ROS_DEBUG_STREAM("Header     : " << msg->header);
+	ROS_DEBUG_STREAM("MapMetaData: " << msg->info);
+	if (writeDebugImages)
+		ROS_INFO_STREAM("Current path is " << getcwd(NULL, 0) << "\n"); //will leak mem
+	sensor_msgs::Image map;
+
+	cv::Mat cv_image_walls_and_unknown_cleaned_combined;
+	preprocess_map(msg,cv_image_walls_and_unknown_cleaned_combined);
+	
 	cv_bridge::CvImage finalImage;
 	finalImage.encoding = "mono8";
 	finalImage.image = cv_image_walls_and_unknown_cleaned_combined;
@@ -164,99 +272,15 @@ void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
 	if (finished_before_timeout)
 	{
 		ROS_INFO("Finished successfully!");
-		ipa_building_msgs::MapSegmentationResultConstPtr result_seg = ac->getResult();
-		AStarPlanner a_star_path_planner;
-		cv_bridge::CvImagePtr cv_ptr_obj;
-		cv_ptr_obj = cv_bridge::toCvCopy(result_seg->segmented_map, sensor_msgs::image_encodings::TYPE_32SC1);
-		double min, max;
-		cv::minMaxLoc(cv_ptr_obj->image,&min,&max);
-		cv::Mat segmented_map = cv_ptr_obj->image;
-		cv::Mat colour_segmented_map = segmented_map.clone();
-		colour_segmented_map.convertTo(colour_segmented_map, CV_8U);
-		cv::normalize(colour_segmented_map,colour_segmented_map,255,0,cv::NORM_MINMAX);
-		cv::minMaxLoc(colour_segmented_map,&min,&max);
-		if (writeDebugImages)
-			cv::imwrite("segmented_map.png",segmented_map);
-		cv::cvtColor(colour_segmented_map, colour_segmented_map, CV_GRAY2BGR);
-		colour_segmented_map = Scalar(0,0,0);
-		cv::Mat cleaned_map;
-		cv::Mat downsampled_map;
-		cv::dilate(cv_image.image, cleaned_map, cv::Mat(), cv::Point(-1, -1), 2);
-		int unknown=0;
-		if (enableAStar) 
-		{
-			size_t nb_rooms = result_seg->room_information_in_pixel.size()+1;
-			unsigned int room_sizes[nb_rooms]={0};
-			for(size_t u = 0; u < segmented_map.rows; ++u)
-			{
-				for(size_t v = 0; v < segmented_map.cols; ++v)
-				{
-					unsigned int id = segmented_map.at<int>(u,v);
-					if (id>result_seg->room_information_in_pixel.size())
-						++unknown;
-						//ROS_ERROR_STREAM("Room size calculator: Out of range: " << id << std::endl);
-					else
-						++room_sizes[id];
-				}
-			}
-			ROS_INFO_STREAM("#"<<unknown<<" px belong to no rooms?!?");
-			/* Which center should we use?
-			for (size_t src = 0; src < result_seg->room_information_in_pixel.size(); ++src) { // not nb_rooms
-				std::ostringstream str;
-				str << "R" << src;
-				pointNames[src] = str.str();
-				cv::Mat tmp;
-				cv::Vec3b c = colour_segmented_map.at<cv::Vec3b>(result_seg->room_information_in_pixel[src].room_center.y,result_seg->room_information_in_pixel[src].room_center.x);
-				cv::inRange(colour_segmented_map,c,c, tmp );
-				cv::Moments m = moments(tmp,true);
-				centers[src].x = m.m10/m.m00;
-				centers[src].y = m.m01/m.m00;
-				std::cout << "Room: " << src << ":" << c << ":" << centers[src].x << "," << centers[src].y << std::endl;
-			}*/
-
-			a_star_path_planner.downsampleMap(cleaned_map, downsampled_map, 1.0, 3.0, 1.0);
-			if (writeDebugImages)
-				cv::imwrite("downsampled_map_for_a_star.png", downsampled_map);
-			std::cout << "#" << result_seg->room_information_in_pixel.size() << " final rooms" << std::endl;
-			for(size_t src = 0; src < result_seg->room_information_in_pixel.size(); ++src)
-			{
-				int src_x = result_seg->room_information_in_pixel[src].room_center.x;
-				int src_y = result_seg->room_information_in_pixel[src].room_center.y;
-				for(size_t dst = 0; dst < result_seg->room_information_in_pixel.size(); ++dst)
-				{
-					if (src==dst)
-					{
-						if (printTaskTable)
-						{
-							double rsize = room_sizes[src+1] * msg->info.resolution * msg->info.resolution;
-							std::cout << std::fixed << std::setprecision(2) << rsize << ",";
-						}
-						continue;
-					}
-					int dst_x = result_seg->room_information_in_pixel[dst].room_center.x;
-					int dst_y = result_seg->room_information_in_pixel[dst].room_center.y;
-					a_star_path_planner.m = downsampled_map.rows;// horizontal size of the map
-					a_star_path_planner.n = downsampled_map.cols;// vertical size size of the map
-					std::string path = a_star_path_planner.pathFind(src_x, src_y, dst_x, dst_y, downsampled_map);
-					a_star_path_planner.drawRoute(colour_segmented_map,cv::Point(src_x,src_y),path,1.0);
-					if (printTaskTable)
-						std::cout << std::fixed << std::setprecision(2) << (path.size() *  msg->info.resolution) << ",";
-				}
-				cv::circle(colour_segmented_map, cv::Point(src_x,src_y), 2, CV_RGB(255,0,0));
-				if (printTaskTable)
-					std::cout << std::endl;
-			}
-			if (writeDebugImages)
-				cv::imwrite("segmentated_map_with_pathes.png",colour_segmented_map);
-		}
+		processSegmentedMap(cv_image, msg->info.resolution);
 	}
 	
 
  }
 
+/* Main: Starts the Room Segmentation Client */
 int main(int argc, char **argv)
 {
-	
 	ros::init(argc, argv, "room_segmentation_client");
 	ros::NodeHandle nh;
 	
