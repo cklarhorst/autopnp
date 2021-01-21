@@ -15,11 +15,28 @@
 #include <iostream>
 #include <filesystem>
 
+struct Poi {
+	double centerX, centerY;
+	double size;
+	std::string label;
+	cv::Scalar color;
+	Poi(double centerX, double centerY, double size, std::string label, cv::Scalar color)
+    {
+		this->centerX = centerX;
+		this->centerY = centerY;
+		this->size  = size;
+		this->label = label;
+		this->color = color;
+    }
+};
+
+
 /* Used by the mapCallback */
 actionlib::SimpleActionClient<ipa_building_msgs::MapSegmentationAction>* ac;
 bool writeDebugImages = false;
 bool enableAStar      = false;
 bool printTaskTable   = false;
+std::vector<Poi> pois;
 using namespace cv;
 
 /**
@@ -185,23 +202,36 @@ static void runAStarOnSegmentedMap(ipa_building_msgs::MapSegmentationResultConst
 	if (writeDebugImages)
 		cv::imwrite("downsampled_map_for_a_star.png", downsampled_map);
 	std::cout << "#" << result_seg->room_information_in_pixel.size() << " final rooms" << std::endl;
-	for(size_t src = 0; src < result_seg->room_information_in_pixel.size(); ++src)
+	
+	std::vector<Poi> roomsAndPois;
+	
+	// Add rooms
+	for(size_t i = 0; i < result_seg->room_information_in_pixel.size(); ++i)
 	{
-		int src_x = result_seg->room_information_in_pixel[src].room_center.x;
-		int src_y = result_seg->room_information_in_pixel[src].room_center.y;
-		for(size_t dst = 0; dst < result_seg->room_information_in_pixel.size(); ++dst)
+		roomsAndPois.emplace_back(result_seg->room_information_in_pixel[i].room_center.x, result_seg->room_information_in_pixel[i].room_center.y, room_sizes[i+1] * map_resolution * map_resolution, std::string("room"), CV_RGB (255,0,0));
+	}
+	// Add Pois
+	for(Poi poi : pois)
+	{
+		roomsAndPois.push_back(poi);
+	}
+	
+	for(size_t src = 0; src < roomsAndPois.size(); ++src)
+	{
+		int src_x = roomsAndPois[src].centerX;
+		int src_y = roomsAndPois[src].centerY;
+		for(size_t dst = 0; dst < roomsAndPois.size(); ++dst)
 		{
 			if (src==dst)
 			{
 				if (printTaskTable)
 				{
-					double rsize = room_sizes[src+1] * map_resolution * map_resolution;
-					std::cout << std::fixed << std::setprecision(2) << rsize << ",";
+					std::cout << std::fixed << std::setprecision(2) << roomsAndPois[src].size << ",";
 				}
 				continue;
 			}
-			int dst_x = result_seg->room_information_in_pixel[dst].room_center.x;
-			int dst_y = result_seg->room_information_in_pixel[dst].room_center.y;
+			int dst_x = roomsAndPois[dst].centerX;
+			int dst_y = roomsAndPois[dst].centerY;
 			a_star_path_planner.m = downsampled_map.rows;// horizontal size of the map
 			a_star_path_planner.n = downsampled_map.cols;// vertical size size of the map
 			std::string path = a_star_path_planner.pathFind(src_x, src_y, dst_x, dst_y, downsampled_map);
@@ -209,7 +239,7 @@ static void runAStarOnSegmentedMap(ipa_building_msgs::MapSegmentationResultConst
 			if (printTaskTable)
 				std::cout << std::fixed << std::setprecision(2) << (path.size() *  map_resolution) << ",";
 		}
-		cv::circle(colour_segmented_map, cv::Point(src_x,src_y), 2, CV_RGB(255,0,0));
+		cv::circle(colour_segmented_map, cv::Point(src_x,src_y), 2, roomsAndPois[src].color);
 		if (printTaskTable)
 			std::cout << std::endl;
 	}
