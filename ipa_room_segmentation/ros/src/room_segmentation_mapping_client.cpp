@@ -170,7 +170,7 @@ static void runAStarOnSegmentedMap(ipa_building_msgs::MapSegmentationResultConst
 	//colour_segmented_map = Scalar(0,0,0);
 	cv::Mat cleaned_map;
 	cv::Mat downsampled_map;
-	cv::dilate(cv_image.image, cleaned_map, cv::Mat(), cv::Point(-1, -1), 2);
+	cv::dilate(cv_image.image, cleaned_map, cv::Mat(), cv::Point(-1, -1), 1);
 	
 	size_t nb_rooms = result_seg->room_information_in_pixel.size()+1;
 	unsigned int room_sizes[nb_rooms]={0};
@@ -201,7 +201,7 @@ static void runAStarOnSegmentedMap(ipa_building_msgs::MapSegmentationResultConst
 		std::cout << "Room: " << src << ":" << c << ":" << centers[src].x << "," << centers[src].y << std::endl;
 	}*/
 
-	a_star_path_planner.downsampleMap(cleaned_map, downsampled_map, 1.0, 3.0, 1.0);
+	a_star_path_planner.downsampleMap(cleaned_map, downsampled_map, 1.0, 4.0, 1.0);
 	if (writeDebugImages)
 		cv::imwrite("downsampled_map_for_a_star.png", downsampled_map);
 	std::cout << "#" << result_seg->room_information_in_pixel.size() << " final rooms" << std::endl;
@@ -244,7 +244,7 @@ static void runAStarOnSegmentedMap(ipa_building_msgs::MapSegmentationResultConst
 			if (printTaskTable)
 				std::cout << std::fixed << std::setprecision(2) << (path.size() *  map_resolution) << ",";
 		}
-		cv::circle(colour_segmented_map, cv::Point(src_x,src_y), 2, roomsAndPois[src].color);
+		cv::circle(colour_segmented_map, cv::Point(src_x,src_y), 4, roomsAndPois[src].color, 2);
 		if (printTaskTable)
 			std::cout << std::endl;
 	}
@@ -359,10 +359,10 @@ int main(int argc, char **argv)
 	drc.setConfig("display_segmented_map", false);
 	drc.setConfig("publish_segmented_map", true);
 	drc.setConfig("max_iterations", 200);
-	drc.setConfig("max_area_for_merging", 100.0);
+	drc.setConfig("max_area_for_merging", 100.0); //100.0 citec 
 	drc.setConfig("room_area_factor_lower_limit_voronoi", 2.5);
 	drc.setConfig("min_critical_point_distance_factor", 1.5);
-	drc.setConfig("voronoi_neighborhood_index", 100);	//800
+	drc.setConfig("voronoi_neighborhood_index", 100);	//100 citec-single-corridor; 500 citec-split-corridors
 	ROS_INFO("Waiting");
 	ros::Subscriber sub = nh.subscribe(map_publish_topic, 1, mapCallback);
 	ros::spin();
