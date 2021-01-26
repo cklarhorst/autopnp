@@ -14,6 +14,7 @@
 #include <ipa_room_segmentation/A_star_pathplanner.h>
 #include <iostream>
 #include <filesystem>
+#include <boost/algorithm/string.hpp>
 
 struct Poi {
 	double centerX, centerY;
@@ -37,6 +38,7 @@ bool writeDebugImages = false;
 bool enableAStar      = false;
 bool printTaskTable   = false;
 std::vector<Poi> pois;
+std::string poiDescription; //Used to define the pois
 using namespace cv;
 
 /**
@@ -161,10 +163,11 @@ static void runAStarOnSegmentedMap(ipa_building_msgs::MapSegmentationResultConst
 	double min, max;
 	cv::Mat colour_segmented_map = segmented_map.clone();
 	colour_segmented_map.convertTo(colour_segmented_map, CV_8U);
+	colour_segmented_map.setTo(0, colour_segmented_map==255);
 	cv::normalize(colour_segmented_map,colour_segmented_map,255,0,cv::NORM_MINMAX);
 	cv::minMaxLoc(colour_segmented_map,&min,&max);
 	cv::cvtColor(colour_segmented_map, colour_segmented_map, CV_GRAY2BGR);
-	colour_segmented_map = Scalar(0,0,0);
+	//colour_segmented_map = Scalar(0,0,0);
 	cv::Mat cleaned_map;
 	cv::Mat downsampled_map;
 	cv::dilate(cv_image.image, cleaned_map, cv::Mat(), cv::Point(-1, -1), 2);
@@ -210,11 +213,13 @@ static void runAStarOnSegmentedMap(ipa_building_msgs::MapSegmentationResultConst
 	{
 		roomsAndPois.emplace_back(result_seg->room_information_in_pixel[i].room_center.x, result_seg->room_information_in_pixel[i].room_center.y, room_sizes[i+1] * map_resolution * map_resolution, std::string("room"), CV_RGB (255,0,0));
 	}
+	ROS_INFO_STREAM("#Rooms: "<<roomsAndPois.size());
 	// Add Pois
 	for(Poi poi : pois)
 	{
 		roomsAndPois.push_back(poi);
 	}
+	ROS_INFO_STREAM("#Poi: "<<pois.size());
 	
 	for(size_t src = 0; src < roomsAndPois.size(); ++src)
 	{
@@ -244,7 +249,9 @@ static void runAStarOnSegmentedMap(ipa_building_msgs::MapSegmentationResultConst
 			std::cout << std::endl;
 	}
 	if (writeDebugImages)
+	{
 		cv::imwrite("segmentated_map_with_pathes.png",colour_segmented_map);	
+	}
 }
 
 static void processSegmentedMap(cv_bridge::CvImage cv_image, double map_resolution)
@@ -272,6 +279,23 @@ static void processSegmentedMap(cv_bridge::CvImage cv_image, double map_resoluti
 void mapCallback(const nav_msgs::OccupancyGridConstPtr& msg)
 { 
 	ROS_INFO("Receive new map");
+	
+	pois.clear();
+	std::vector<std::string> poisString;
+	boost::split(poisString,poiDescription,boost::is_any_of(";"));
+	for (std::string poiString : poisString)
+	{
+		std::vector<std::string> poisData;
+		boost::split(poisData,poiString,boost::is_any_of(","));
+		if (poisData.size()!=7) 
+		{
+			ROS_INFO_STREAM("Error: no valid POI Data: " << poiString << "size: " << poisData.size());
+			continue;
+		}
+		pois.emplace_back(std::stod(poisData[0]),std::stod(poisData[1]),std::stod(poisData[2]),poisData[3],CV_RGB(std::stoi(poisData[4]),std::stoi(poisData[5]),std::stoi(poisData[6])));	
+	}
+	ROS_INFO_STREAM("#pois loaded: "<<pois.size());
+	ROS_INFO_STREAM("poi string: " <<poiDescription);
 	ROS_DEBUG_STREAM("Header     : " << msg->header);
 	ROS_DEBUG_STREAM("MapMetaData: " << msg->info);
 	if (writeDebugImages)
@@ -320,6 +344,7 @@ int main(int argc, char **argv)
 	nh.param("/room_segmentation_client/write_debug_images", writeDebugImages, true);
 	nh.param("/room_segmentation_client/enable_a_star", enableAStar, true);
 	nh.param("/room_segmentation_client/print_task_table", printTaskTable, true);
+	nh.param("/room_segmentation_client/poi_description", poiDescription, std::string(""));
 	ROS_INFO_STREAM("test" << writeDebugImages);
 
 	ROS_INFO("Waiting for room segmentation server to start.");
